@@ -6,11 +6,15 @@ The Intelligent Stock Recommendation System is a comprehensive platform that pro
 
 ### Key Design Principles
 
-1. **Data-Driven Decision Making**: All recommendations are based on proprietary algorithms analyzing multiple data sources
-2. **Evidence-Based Rationale**: Every recommendation is supported by historical similar cases and company IR information
-3. **Real-Time Validation**: Continuous tracking of predictions against actual market performance
-4. **Personalization**: Tailored recommendations based on individual investor profiles and risk tolerance
-5. **Scalability**: Designed to handle multiple users and large volumes of market data
+1. **Serverless-First Architecture**: Minimize operational overhead with AWS Lambda and managed services
+2. **TypeScript Monorepo**: Unified codebase with shared types and utilities across all services
+3. **Event-Driven Processing**: Use EventBridge and Step Functions for decoupled, scalable data processing
+4. **Data-Driven Decision Making**: All recommendations are based on proprietary algorithms analyzing multiple data sources
+5. **Evidence-Based Rationale**: Every recommendation is supported by historical similar cases and company IR information
+6. **Real-Time Validation**: Continuous tracking of predictions against actual market performance
+7. **Personalization**: Tailored recommendations based on individual investor profiles and risk tolerance
+8. **Cost-Optimized Scalability**: Accept cold start latency in favor of reduced maintenance costs
+9. **Security by Design**: Centralized secrets management and least-privilege access patterns
 
 ## Architecture
 
@@ -19,33 +23,42 @@ The Intelligent Stock Recommendation System is a comprehensive platform that pro
 ```mermaid
 graph TB
     subgraph "Client Layer"
-        WEB[Web Application]
-        MOBILE[Mobile App]
+        WEB[Web Application - React/TS]
+        MOBILE[Mobile App - React Native/TS]
     end
     
-    subgraph "API Gateway"
+    subgraph "AWS API Gateway"
         GATEWAY[API Gateway]
     end
     
-    subgraph "Application Services"
-        AUTH[Authentication Service]
-        RECOMMEND[Recommendation Service]
-        PREDICT[Prediction Service]
-        ANALYSIS[Analysis Service]
-        USER[User Management Service]
+    subgraph "Serverless Application Services (AWS Lambda)"
+        AUTH[Authentication Service - TS]
+        RECOMMEND[Recommendation Service - TS]
+        PREDICT[Prediction Service - TS]
+        ANALYSIS[Analysis Service - TS]
+        USER[User Management Service - TS]
     end
     
     subgraph "Data Processing Layer"
-        COLLECTOR[Data Collector]
-        PROCESSOR[Data Processor]
-        ML[ML Pipeline]
+        subgraph "Event Control Layer"
+            EVENTBRIDGE[Amazon EventBridge]
+            STEPFUNCTIONS[AWS Step Functions]
+        end
+        COLLECTOR[Data Collector - Lambda/TS]
+        PROCESSOR[Data Processor - Lambda/TS]
+        ML[ML Pipeline - Lambda/TS]
+    end
+    
+    subgraph "Secrets Management"
+        SECRETS[AWS Secrets Manager]
+        PARAMS[AWS Systems Manager Parameter Store]
     end
     
     subgraph "Data Storage"
-        POSTGRES[(PostgreSQL)]
-        REDIS[(Redis Cache)]
-        TIMESERIES[(Time Series DB)]
-        FILES[(File Storage)]
+        RDS[(Amazon RDS PostgreSQL)]
+        DYNAMODB[(Amazon DynamoDB)]
+        TIMESTREAM[(Amazon Timestream)]
+        S3[(Amazon S3)]
     end
     
     subgraph "External APIs"
@@ -66,188 +79,279 @@ graph TB
     PREDICT --> ML
     ANALYSIS --> PROCESSOR
     
+    EVENTBRIDGE --> COLLECTOR
+    STEPFUNCTIONS --> PROCESSOR
+    STEPFUNCTIONS --> ML
+    
+    COLLECTOR --> SECRETS
+    COLLECTOR --> PARAMS
     COLLECTOR --> STOCK_API
     COLLECTOR --> IR_API
     COLLECTOR --> NEWS_API
     
-    PROCESSOR --> POSTGRES
-    PROCESSOR --> TIMESERIES
-    ML --> POSTGRES
-    ML --> TIMESERIES
+    PROCESSOR --> RDS
+    PROCESSOR --> TIMESTREAM
+    PROCESSOR --> DYNAMODB
+    ML --> RDS
+    ML --> TIMESTREAM
+    ML --> S3
     
-    AUTH --> REDIS
-    RECOMMEND --> REDIS
+    AUTH --> DYNAMODB
+    RECOMMEND --> DYNAMODB
 ```
 
-### Technology Stack
+### Technology Stack (Serverless & TypeScript-First)
 
-- **Backend**: Python with FastAPI framework
-- **Database**: PostgreSQL for relational data, InfluxDB for time series data
-- **Cache**: Redis for session management and frequently accessed data
-- **Machine Learning**: scikit-learn, TensorFlow for predictive modeling
-- **Message Queue**: Celery with Redis for background tasks
-- **Frontend**: React.js with TypeScript
-- **Deployment**: Docker containers with Kubernetes orchestration
+- **Monorepo Structure**: TypeScript-based monorepo with shared libraries
+- **Backend**: AWS Lambda functions with TypeScript and Node.js runtime
+- **API Layer**: AWS API Gateway with Lambda proxy integration
+- **Database**: Amazon RDS (PostgreSQL) for relational data, Amazon Timestream for time series data
+- **NoSQL**: Amazon DynamoDB for user sessions and fast lookups
+- **Storage**: Amazon S3 for file storage and ML model artifacts
+- **Machine Learning**: AWS SageMaker with TypeScript SDK, TensorFlow.js for client-side inference
+- **Event Processing**: Amazon EventBridge for event routing, AWS Step Functions for workflow orchestration
+- **Secrets Management**: AWS Secrets Manager for API keys, AWS Systems Manager Parameter Store for configuration
+- **Frontend**: React.js with TypeScript, deployed on AWS CloudFront + S3
+- **Mobile**: React Native with TypeScript for cross-platform mobile apps
+- **Infrastructure**: AWS CDK with TypeScript for Infrastructure as Code
+- **Monitoring**: AWS CloudWatch, AWS X-Ray for distributed tracing
 
 ## Components and Interfaces
 
-### 1. Data Collection Service
+### 1. Data Collection Service (AWS Lambda + EventBridge)
 
-**Purpose**: Automatically collect and update stock prices, company IR information, and market data
+**Purpose**: Automatically collect and update stock prices, company IR information, and market data using event-driven architecture
 
 **Key Components**:
-- Stock Price Collector: Real-time and historical stock price data
-- IR Information Collector: Company investor relations documents and announcements
-- Market Data Collector: Market trends, sector performance, economic indicators
-- News Collector: Financial news and market sentiment data
+- Stock Price Collector: Lambda function triggered by EventBridge schedule
+- IR Information Collector: Lambda function for company investor relations data
+- Market Data Collector: Lambda function for market trends and economic indicators
+- News Collector: Lambda function for financial news and sentiment analysis
+- Event Control Layer: EventBridge rules and Step Functions for orchestration
+- Secrets Integration: AWS Secrets Manager for API credentials
 
 **Interfaces**:
-```python
-class DataCollectorInterface:
-    def collect_stock_data(self, symbols: List[str]) -> StockDataResponse
-    def collect_ir_data(self, company_id: str) -> IRDataResponse
-    def collect_market_data(self, date_range: DateRange) -> MarketDataResponse
-    def schedule_data_collection(self, frequency: str) -> None
+```typescript
+interface DataCollectorService {
+  collectStockData(symbols: string[]): Promise<StockDataResponse>;
+  collectIRData(companyId: string): Promise<IRDataResponse>;
+  collectMarketData(dateRange: DateRange): Promise<MarketDataResponse>;
+  scheduleDataCollection(frequency: string): Promise<void>;
+}
+
+interface SecretsManagerService {
+  getApiCredentials(apiName: string): Promise<ApiCredentials>;
+  rotateCredentials(apiName: string): Promise<void>;
+}
+
+interface EventBridgeService {
+  publishDataCollectionEvent(event: DataCollectionEvent): Promise<void>;
+  scheduleRecurringCollection(schedule: ScheduleExpression): Promise<void>;
+}
 ```
 
-### 2. Recommendation Engine
+### 2. Recommendation Engine (AWS Lambda + SageMaker)
 
-**Purpose**: Generate personalized stock recommendations using proprietary algorithms
+**Purpose**: Generate personalized stock recommendations using proprietary algorithms in a serverless environment
 
 **Key Components**:
-- Algorithm Engine: Core recommendation logic
-- Personalization Module: User preference integration
-- Risk Assessment: Risk tolerance evaluation
-- Entry Point Calculator: Optimal buy signal determination
+- Algorithm Engine: Lambda function with core recommendation logic
+- Personalization Module: Lambda function for user preference integration
+- Risk Assessment: Lambda function for risk tolerance evaluation
+- Entry Point Calculator: Lambda function for optimal buy signal determination
+- ML Model Integration: SageMaker endpoints for complex predictions
 
 **Interfaces**:
-```python
-class RecommendationEngineInterface:
-    def generate_recommendations(self, user_profile: UserProfile) -> List[StockRecommendation]
-    def calculate_entry_points(self, stock_symbol: str) -> EntryPointData
-    def assess_risk_level(self, stock_symbol: str, user_profile: UserProfile) -> RiskLevel
-    def personalize_recommendations(self, recommendations: List[StockRecommendation], user_profile: UserProfile) -> List[StockRecommendation]
+```typescript
+interface RecommendationEngineService {
+  generateRecommendations(userProfile: UserProfile): Promise<StockRecommendation[]>;
+  calculateEntryPoints(stockSymbol: string): Promise<EntryPointData>;
+  assessRiskLevel(stockSymbol: string, userProfile: UserProfile): Promise<RiskLevel>;
+  personalizeRecommendations(
+    recommendations: StockRecommendation[], 
+    userProfile: UserProfile
+  ): Promise<StockRecommendation[]>;
+}
+
+interface SageMakerService {
+  invokeRecommendationModel(input: ModelInput): Promise<ModelOutput>;
+  deployModel(modelArtifacts: string): Promise<EndpointConfig>;
+}
 ```
 
-### 3. Price Prediction Service
+### 3. Price Prediction Service (AWS Lambda + SageMaker + Step Functions)
 
-**Purpose**: Forecast future price movements with multiple scenario modeling
+**Purpose**: Forecast future price movements with multiple scenario modeling using serverless ML pipeline
 
 **Key Components**:
-- Predictive Models: Machine learning models for price forecasting
-- Scenario Generator: Best/worst/expected case modeling
-- Timeline Calculator: Time-based milestone establishment
-- Selling Point Optimizer: Optimal exit timing calculation
+- Predictive Models: SageMaker endpoints for price forecasting models
+- Scenario Generator: Lambda function for best/worst/expected case modeling
+- Timeline Calculator: Lambda function for time-based milestone establishment
+- Selling Point Optimizer: Lambda function for optimal exit timing calculation
+- ML Pipeline Orchestration: Step Functions for complex prediction workflows
 
 **Interfaces**:
-```python
-class PricePredictionInterface:
-    def predict_price_trajectory(self, stock_symbol: str, time_horizon: int) -> PricePrediction
-    def generate_scenarios(self, stock_symbol: str) -> ScenarioModeling
-    def calculate_selling_points(self, stock_symbol: str, entry_price: float) -> SellingPoints
-    def establish_milestones(self, prediction: PricePrediction) -> List[Milestone]
+```typescript
+interface PricePredictionService {
+  predictPriceTrajectory(stockSymbol: string, timeHorizon: number): Promise<PricePrediction>;
+  generateScenarios(stockSymbol: string): Promise<ScenarioModeling>;
+  calculateSellingPoints(stockSymbol: string, entryPrice: number): Promise<SellingPoints>;
+  establishMilestones(prediction: PricePrediction): Promise<Milestone[]>;
+}
+
+interface StepFunctionsService {
+  executePredictionWorkflow(input: PredictionWorkflowInput): Promise<WorkflowExecution>;
+  monitorWorkflowExecution(executionArn: string): Promise<ExecutionStatus>;
+}
 ```
 
-### 4. Analysis and Rationale Service
+### 4. Analysis and Rationale Service (AWS Lambda + DynamoDB)
 
-**Purpose**: Provide evidence-based investment rationale using IR data and historical cases
+**Purpose**: Provide evidence-based investment rationale using IR data and historical cases with fast serverless processing
 
 **Key Components**:
-- IR Analyzer: Company investor relations information analysis
-- Historical Pattern Matcher: Similar case identification
-- Correlation Engine: Price movement and fundamental correlation
-- Evidence Compiler: Rationale documentation generator
+- IR Analyzer: Lambda function for company investor relations information analysis
+- Historical Pattern Matcher: Lambda function with DynamoDB for similar case identification
+- Correlation Engine: Lambda function for price movement and fundamental correlation
+- Evidence Compiler: Lambda function for rationale documentation generation
+- Fast Data Access: DynamoDB for quick historical case lookups
 
 **Interfaces**:
-```python
-class AnalysisServiceInterface:
-    def analyze_ir_data(self, company_id: str) -> IRAnalysis
-    def find_similar_cases(self, stock_pattern: StockPattern) -> List[HistoricalCase]
-    def correlate_fundamentals_price(self, stock_symbol: str) -> CorrelationAnalysis
-    def compile_investment_rationale(self, stock_symbol: str) -> InvestmentRationale
+```typescript
+interface AnalysisService {
+  analyzeIRData(companyId: string): Promise<IRAnalysis>;
+  findSimilarCases(stockPattern: StockPattern): Promise<HistoricalCase[]>;
+  correlateFundamentalsPrice(stockSymbol: string): Promise<CorrelationAnalysis>;
+  compileInvestmentRationale(stockSymbol: string): Promise<InvestmentRationale>;
+}
+
+interface DynamoDBService {
+  queryHistoricalCases(pattern: PatternQuery): Promise<HistoricalCase[]>;
+  putAnalysisResult(result: AnalysisResult): Promise<void>;
+  getAnalysisCache(key: string): Promise<AnalysisResult | null>;
+}
 ```
 
-### 5. Performance Tracking Service
+### 5. Performance Tracking Service (AWS Lambda + Timestream + EventBridge)
 
-**Purpose**: Monitor prediction accuracy and validate system effectiveness through real trading results
+**Purpose**: Monitor prediction accuracy and validate system effectiveness through real trading results using time-series optimized storage
 
 **Key Components**:
-- Prediction Tracker: Continuous monitoring of predictions vs. actual prices
-- Performance Calculator: Success rate and return calculation
-- Validation Engine: Real trading result validation
-- Reporting Generator: Performance report creation
+- Prediction Tracker: Lambda function for continuous monitoring with EventBridge triggers
+- Performance Calculator: Lambda function for success rate and return calculation
+- Validation Engine: Lambda function for real trading result validation
+- Reporting Generator: Lambda function for performance report creation
+- Time Series Storage: Amazon Timestream for efficient time-based data queries
 
 **Interfaces**:
-```python
-class PerformanceTrackingInterface:
-    def track_predictions(self, prediction_id: str) -> TrackingStatus
-    def calculate_performance_metrics(self, time_period: DateRange) -> PerformanceMetrics
-    def validate_trading_results(self, trade_data: TradeData) -> ValidationResult
-    def generate_performance_report(self, user_id: str) -> PerformanceReport
+```typescript
+interface PerformanceTrackingService {
+  trackPredictions(predictionId: string): Promise<TrackingStatus>;
+  calculatePerformanceMetrics(timePeriod: DateRange): Promise<PerformanceMetrics>;
+  validateTradingResults(tradeData: TradeData): Promise<ValidationResult>;
+  generatePerformanceReport(userId: string): Promise<PerformanceReport>;
+}
+
+interface TimestreamService {
+  writePerformanceData(data: PerformanceDataPoint[]): Promise<void>;
+  queryPerformanceHistory(query: TimestreamQuery): Promise<PerformanceDataPoint[]>;
+  aggregatePerformanceMetrics(timeRange: DateRange): Promise<AggregatedMetrics>;
+}
 ```
 
 ## Data Models
 
-### Core Data Models
+### Core Data Models (TypeScript)
 
-```python
-@dataclass
-class StockRecommendation:
-    symbol: str
-    company_name: str
-    entry_price: float
-    target_price: float
-    confidence_score: float
-    risk_level: RiskLevel
-    investment_rationale: str
-    similar_cases: List[HistoricalCase]
-    created_at: datetime
+```typescript
+// Shared types across the monorepo
+export interface StockRecommendation {
+  symbol: string;
+  companyName: string;
+  entryPrice: number;
+  targetPrice: number;
+  confidenceScore: number;
+  riskLevel: RiskLevel;
+  investmentRationale: string;
+  similarCases: HistoricalCase[];
+  createdAt: Date;
+}
 
-@dataclass
-class PricePrediction:
-    stock_symbol: str
-    current_price: float
-    predicted_prices: Dict[int, float]  # days -> price
-    scenarios: ScenarioModeling
-    milestones: List[Milestone]
-    confidence_interval: Tuple[float, float]
-    created_at: datetime
+export interface PricePrediction {
+  stockSymbol: string;
+  currentPrice: number;
+  predictedPrices: Record<number, number>; // days -> price
+  scenarios: ScenarioModeling;
+  milestones: Milestone[];
+  confidenceInterval: [number, number];
+  createdAt: Date;
+}
 
-@dataclass
-class UserProfile:
-    user_id: str
-    risk_tolerance: RiskLevel
-    investment_period: int  # months
-    investment_amount: float
-    experience_level: ExperienceLevel
-    preferences: Dict[str, Any]
-    created_at: datetime
-    updated_at: datetime
+export interface UserProfile {
+  userId: string;
+  riskTolerance: RiskLevel;
+  investmentPeriod: number; // months
+  investmentAmount: number;
+  experienceLevel: ExperienceLevel;
+  preferences: Record<string, unknown>;
+  createdAt: Date;
+  updatedAt: Date;
+}
 
-@dataclass
-class HistoricalCase:
-    case_id: str
-    company_name: str
-    symbol: str
-    pattern_type: str
-    price_appreciation: float
-    time_period: int
-    ir_factors: List[str]
-    similarity_score: float
+export interface HistoricalCase {
+  caseId: string;
+  companyName: string;
+  symbol: string;
+  patternType: string;
+  priceAppreciation: number;
+  timePeriod: number;
+  irFactors: string[];
+  similarityScore: number;
+}
 
-@dataclass
-class InvestmentRationale:
-    stock_symbol: str
-    ir_analysis: IRAnalysis
-    fundamental_factors: List[str]
-    technical_factors: List[str]
-    similar_cases: List[HistoricalCase]
-    risk_factors: List[str]
-    confidence_level: float
+export interface InvestmentRationale {
+  stockSymbol: string;
+  irAnalysis: IRAnalysis;
+  fundamentalFactors: string[];
+  technicalFactors: string[];
+  similarCases: HistoricalCase[];
+  riskFactors: string[];
+  confidenceLevel: number;
+}
+
+// Enums and utility types
+export enum RiskLevel {
+  LOW = 'LOW',
+  MEDIUM = 'MEDIUM',
+  HIGH = 'HIGH'
+}
+
+export enum ExperienceLevel {
+  BEGINNER = 'BEGINNER',
+  INTERMEDIATE = 'INTERMEDIATE',
+  ADVANCED = 'ADVANCED'
+}
+
+// AWS Lambda event types
+export interface LambdaEvent<T = unknown> {
+  body: T;
+  headers: Record<string, string>;
+  requestContext: {
+    requestId: string;
+    stage: string;
+  };
+}
+
+export interface LambdaResponse<T = unknown> {
+  statusCode: number;
+  headers?: Record<string, string>;
+  body: string; // JSON stringified T
+}
 ```
 
-### Database Schema
+### Database Schema (Multi-Database Approach)
 
+#### Amazon RDS (PostgreSQL) - Relational Data
 ```sql
 -- Users table
 CREATE TABLE users (
@@ -287,30 +391,68 @@ CREATE TABLE price_predictions (
     confidence_interval JSONB,
     created_at TIMESTAMP DEFAULT NOW()
 );
+```
 
--- Historical cases table
-CREATE TABLE historical_cases (
-    id UUID PRIMARY KEY,
-    symbol VARCHAR(10),
-    company_name VARCHAR(255),
-    pattern_type VARCHAR(100),
-    price_appreciation DECIMAL(5,2),
-    time_period INTEGER,
-    ir_factors JSONB,
-    case_data JSONB,
-    created_at TIMESTAMP DEFAULT NOW()
-);
+#### Amazon DynamoDB - Fast Lookups and Sessions
+```typescript
+// User sessions and preferences (DynamoDB)
+interface UserSessionItem {
+  PK: string; // USER#${userId}
+  SK: string; // SESSION#${sessionId}
+  userId: string;
+  sessionData: Record<string, unknown>;
+  expiresAt: number; // TTL
+}
 
--- Performance tracking table
-CREATE TABLE performance_tracking (
-    id UUID PRIMARY KEY,
-    recommendation_id UUID REFERENCES stock_recommendations(id),
-    prediction_id UUID REFERENCES price_predictions(id),
-    actual_price DECIMAL(10,2),
-    prediction_accuracy DECIMAL(5,2),
-    tracking_date DATE,
-    created_at TIMESTAMP DEFAULT NOW()
-);
+// Historical cases for fast pattern matching
+interface HistoricalCaseItem {
+  PK: string; // PATTERN#${patternType}
+  SK: string; // CASE#${caseId}
+  symbol: string;
+  companyName: string;
+  patternType: string;
+  priceAppreciation: number;
+  timePeriod: number;
+  irFactors: string[];
+  similarityScore: number;
+  GSI1PK: string; // SYMBOL#${symbol}
+  GSI1SK: string; // APPRECIATION#${priceAppreciation}
+}
+
+// Analysis cache for performance
+interface AnalysisCacheItem {
+  PK: string; // ANALYSIS#${stockSymbol}
+  SK: string; // CACHE#${analysisType}
+  result: Record<string, unknown>;
+  expiresAt: number; // TTL
+}
+```
+
+#### Amazon Timestream - Time Series Data
+```typescript
+// Performance tracking time series
+interface PerformanceDataPoint {
+  time: Date;
+  measure_name: 'prediction_accuracy' | 'actual_price' | 'predicted_price';
+  measure_value: number;
+  dimensions: {
+    stock_symbol: string;
+    prediction_id: string;
+    user_id?: string;
+  };
+}
+
+// Market data time series
+interface MarketDataPoint {
+  time: Date;
+  measure_name: 'stock_price' | 'volume' | 'market_cap';
+  measure_value: number;
+  dimensions: {
+    symbol: string;
+    exchange: string;
+    sector?: string;
+  };
+}
 ```
 
 ## Error Handling
@@ -335,32 +477,67 @@ CREATE TABLE performance_tracking (
    - Incomplete user profiles
    - Authentication failures
 
-### Error Handling Strategy
+### Error Handling Strategy (Serverless)
 
-```python
-class ErrorHandler:
-    def handle_data_collection_error(self, error: DataCollectionError) -> ErrorResponse:
-        if isinstance(error, RateLimitError):
-            return self.schedule_retry_with_backoff(error)
-        elif isinstance(error, DataQualityError):
-            return self.flag_data_for_manual_review(error)
-        else:
-            return self.log_and_notify_admin(error)
-    
-    def handle_prediction_error(self, error: PredictionError) -> ErrorResponse:
-        if isinstance(error, InsufficientDataError):
-            return self.request_additional_data(error)
-        elif isinstance(error, ModelError):
-            return self.fallback_to_alternative_model(error)
-        else:
-            return self.provide_conservative_estimate(error)
-    
-    def handle_user_error(self, error: UserError) -> ErrorResponse:
-        return ErrorResponse(
-            message=error.user_friendly_message,
-            suggestions=error.resolution_suggestions,
-            error_code=error.code
-        )
+```typescript
+// Centralized error handling for Lambda functions
+export class ServerlessErrorHandler {
+  static handleDataCollectionError(error: DataCollectionError): LambdaResponse {
+    if (error instanceof RateLimitError) {
+      // Use EventBridge to schedule retry with exponential backoff
+      return this.scheduleRetryWithBackoff(error);
+    } else if (error instanceof DataQualityError) {
+      // Send to DLQ for manual review
+      return this.flagDataForManualReview(error);
+    } else {
+      // CloudWatch alarm and SNS notification
+      return this.logAndNotifyAdmin(error);
+    }
+  }
+  
+  static handlePredictionError(error: PredictionError): LambdaResponse {
+    if (error instanceof InsufficientDataError) {
+      // Trigger data collection workflow via Step Functions
+      return this.requestAdditionalData(error);
+    } else if (error instanceof ModelError) {
+      // Fallback to alternative SageMaker endpoint
+      return this.fallbackToAlternativeModel(error);
+    } else {
+      // Return conservative estimate with warning
+      return this.provideConservativeEstimate(error);
+    }
+  }
+  
+  static handleUserError(error: UserError): LambdaResponse {
+    return {
+      statusCode: 400,
+      body: JSON.stringify({
+        message: error.userFriendlyMessage,
+        suggestions: error.resolutionSuggestions,
+        errorCode: error.code,
+        requestId: error.requestId
+      })
+    };
+  }
+
+  // Cold start handling
+  static handleColdStartTimeout(): LambdaResponse {
+    return {
+      statusCode: 202,
+      body: JSON.stringify({
+        message: 'Request is being processed. Please check back shortly.',
+        estimatedProcessingTime: '30-60 seconds'
+      })
+    };
+  }
+}
+
+// Dead Letter Queue processing
+export interface DLQHandler {
+  processFailedDataCollection(event: DLQEvent): Promise<void>;
+  processFailedPrediction(event: DLQEvent): Promise<void>;
+  notifyAdministrators(error: SystemError): Promise<void>;
+}
 ```
 
 ## Testing Strategy
@@ -424,22 +601,58 @@ class TestPricePrediction:
         pass
 ```
 
-### Continuous Integration/Continuous Deployment (CI/CD)
+### Continuous Integration/Continuous Deployment (CI/CD) - Serverless
 
 1. **Automated Testing Pipeline**
-   - Run unit tests on every commit
-   - Integration tests on pull requests
-   - Performance tests on staging environment
-   - Security scans and dependency checks
+   - TypeScript compilation and linting on every commit
+   - Unit tests for Lambda functions with Jest
+   - Integration tests using AWS SAM local
+   - End-to-end tests with AWS CDK deploy to test environment
+   - Security scans with AWS CodeGuru and Snyk
 
-2. **Deployment Strategy**
-   - Blue-green deployment for zero downtime
-   - Feature flags for gradual rollouts
-   - Automated rollback on failure detection
-   - Database migration management
+2. **Deployment Strategy (AWS CDK + GitHub Actions)**
+   - Infrastructure as Code with AWS CDK (TypeScript)
+   - Lambda function versioning and aliases for blue-green deployment
+   - AWS CodeDeploy for gradual traffic shifting
+   - Feature flags using AWS AppConfig
+   - Automated rollback on CloudWatch alarm triggers
+   - Database migration with AWS Lambda and RDS Proxy
 
-3. **Monitoring and Alerting**
-   - Real-time system health monitoring
-   - Prediction accuracy tracking
-   - User experience metrics
-   - Business KPI dashboards
+3. **Monitoring and Alerting (AWS Native)**
+   - AWS CloudWatch for Lambda metrics and logs
+   - AWS X-Ray for distributed tracing across services
+   - Custom CloudWatch dashboards for business KPIs
+   - AWS SNS for alert notifications
+   - AWS CloudWatch Synthetics for user experience monitoring
+   - Cost monitoring with AWS Cost Explorer and Budgets
+
+4. **Monorepo CI/CD Structure**
+   ```typescript
+   // Example GitHub Actions workflow
+   name: Deploy Serverless Stock Recommendation System
+   on:
+     push:
+       branches: [main]
+   
+   jobs:
+     test:
+       runs-on: ubuntu-latest
+       steps:
+         - uses: actions/checkout@v3
+         - uses: actions/setup-node@v3
+           with:
+             node-version: '18'
+         - run: npm ci
+         - run: npm run lint
+         - run: npm run test
+         - run: npm run build
+   
+     deploy:
+       needs: test
+       runs-on: ubuntu-latest
+       steps:
+         - uses: actions/checkout@v3
+         - uses: aws-actions/configure-aws-credentials@v2
+         - run: npm ci
+         - run: npx cdk deploy --all --require-approval never
+   ```
