@@ -86,18 +86,18 @@ graph TD
     T12_2 --> T12_3
     
     %% Styling
-    classDef foundation fill:#e1f5fe
-    classDef data fill:#f3e5f5
-    classDef auth fill:#e8f5e8
-    classDef external fill:#fff3e0
-    classDef core fill:#fce4ec
-    classDef ml fill:#f1f8e9
-    classDef analysis fill:#e0f2f1
-    classDef tracking fill:#fafafa
-    classDef api fill:#e3f2fd
-    classDef frontend fill:#f9fbe7
-    classDef testing fill:#fff8e1
-    classDef deploy fill:#fce4ec
+    classDef foundation fill:#e1f5fe,color:#000000
+    classDef data fill:#f3e5f5,color:#000000
+    classDef auth fill:#e8f5e8,color:#000000
+    classDef external fill:#fff3e0,color:#000000
+    classDef core fill:#fce4ec,color:#000000
+    classDef ml fill:#f1f8e9,color:#000000
+    classDef analysis fill:#e0f2f1,color:#000000
+    classDef tracking fill:#fafafa,color:#000000
+    classDef api fill:#e3f2fd,color:#000000
+    classDef frontend fill:#f9fbe7,color:#000000
+    classDef testing fill:#fff8e1,color:#000000
+    classDef deploy fill:#fce4ec,color:#000000
     
     class T1 foundation
     class T2_1,T2_2,T2_3,T2_4 data
