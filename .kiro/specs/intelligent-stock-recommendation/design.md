@@ -883,3 +883,402 @@ class TestPricePrediction:
          - run: npm ci
          - run: npx cdk deploy --all --require-approval never
    ```
+
+## System Maintenance Cost Analysis
+
+### Static System Maintenance Costs (Minimum Operating Costs)
+
+#### **Always-On Compute Services (Fixed Costs)**
+```typescript
+interface StaticComputeCosts {
+  sageMakerEndpoints: {
+    // 1 ml.t3.small instance for basic inference (minimum required)
+    instanceHours: 367.20; // $0.0255 per hour * 24 * 30 * 1 instance
+    totalSageMaker: 367.20;
+  };
+  
+  lambdaFunctions: {
+    // Minimal Lambda costs (mostly free tier)
+    // 20 functions with minimal invocations for health checks
+    requestCharges: 0.00; // Within free tier (1M requests/month)
+    computeCharges: 0.00; // Within free tier (400,000 GB-seconds/month)
+    totalLambda: 0.00;
+  };
+  
+  stepFunctions: {
+    // Minimal state transitions for basic operations
+    stateTransitions: 0.25; // $0.000025 per transition * 10,000 minimal transitions
+    totalStepFunctions: 0.25;
+  };
+}
+
+const staticComputeCosts = 367.45; // USD
+```
+
+#### **Always-On Storage Services (Fixed Costs)**
+```typescript
+interface StaticStorageCosts {
+  rdsPostgreSQL: {
+    // db.t3.micro instance with 20GB storage (minimum viable)
+    instanceCost: 13.32; // $0.0185 per hour * 24 * 30
+    storageCost: 2.30; // $0.115 per GB * 20GB
+    backupStorage: 1.90; // $0.095 per GB * ~20GB backup
+    totalRDS: 17.52;
+  };
+  
+  dynamoDB: {
+    // Minimal storage with free tier usage
+    storage: 0.63; // $0.25 per GB * ~2.5GB (minimal data)
+    readRequestUnits: 0.00; // Within free tier (25 RCU)
+    writeRequestUnits: 0.00; // Within free tier (25 WCU)
+    totalDynamoDB: 0.63;
+  };
+  
+  timestream: {
+    // Minimal time series data storage
+    memoryStore: 7.20; // $0.036 per GB-hour * ~200GB-hours
+    magneticStore: 1.50; // $0.03 per GB * ~50GB
+    queries: 0.50; // Minimal query usage
+    totalTimestream: 9.20;
+  };
+  
+  s3Storage: {
+    // Essential storage only (models, configs)
+    standardStorage: 1.15; // $0.023 per GB * ~50GB
+    requestCosts: 0.50; // Minimal requests
+    dataTransfer: 0.00; // Within free tier
+    totalS3: 1.65;
+  };
+}
+
+const staticStorageCosts = 29.00; // USD
+```
+
+#### **Minimal Networking Services (Fixed Costs)**
+```typescript
+interface StaticNetworkingCosts {
+  apiGateway: {
+    // Minimal API requests (health checks, admin access)
+    requestCosts: 0.00; // Within free tier (1M requests/month)
+    dataTransfer: 0.00; // Within free tier (1GB/month)
+    totalAPIGateway: 0.00;
+  };
+  
+  cloudFront: {
+    // Basic CDN for static assets only
+    requestCosts: 0.00; // Within free tier (10M requests/month)
+    dataTransfer: 0.00; // Within free tier (1TB/month)
+    totalCloudFront: 0.00;
+  };
+  
+  eventBridge: {
+    // Minimal custom events for system maintenance
+    customEvents: 0.10; // $0.000001 per event * 100,000 events
+    totalEventBridge: 0.10;
+  };
+}
+
+const staticNetworkingCosts = 0.10; // USD
+```
+
+#### **Essential Security Services (Fixed Costs)**
+```typescript
+interface StaticSecurityCosts {
+  secretsManager: {
+    // 5 essential secrets (database, critical APIs)
+    secretStorage: 2.00; // $0.40 per secret * 5 secrets
+    apiCalls: 0.05; // Minimal API calls
+    totalSecretsManager: 2.05;
+  };
+  
+  systemsManager: {
+    // Basic parameter storage
+    standardParameters: 0.00; // Free tier (10,000 parameters)
+    advancedParameters: 0.50; // $0.05 per parameter * 10 critical parameters
+    totalSystemsManager: 0.50;
+  };
+  
+  kms: {
+    // Single key for encryption
+    keyUsage: 1.00; // $1 per key per month
+    requests: 0.03; // Minimal requests
+    totalKMS: 1.03;
+  };
+}
+
+const staticSecurityCosts = 3.58; // USD
+```
+
+#### **Basic Monitoring Services (Fixed Costs)**
+```typescript
+interface StaticMonitoringCosts {
+  cloudWatch: {
+    // Essential monitoring only
+    logIngestion: 2.50; // $0.50 per GB * ~5GB minimal logs
+    logStorage: 0.30; // $0.03 per GB * ~10GB stored logs
+    customMetrics: 3.00; // $0.30 per metric * 10 essential metrics
+    alarms: 1.00; // $0.10 per alarm * 10 critical alarms
+    dashboards: 3.00; // $3 per dashboard * 1 essential dashboard
+    totalCloudWatch: 9.80;
+  };
+  
+  xRay: {
+    // Minimal tracing for error detection
+    tracesRecorded: 0.50; // Minimal trace volume
+    tracesRetrieved: 0.05; // Minimal retrieval
+    totalXRay: 0.55;
+  };
+  
+  synthetics: {
+    // Single health check canary
+    canaryRuns: 0.86; // $0.0012 per run * 720 runs (every hour)
+    totalSynthetics: 0.86;
+  };
+}
+
+const staticMonitoringCosts = 11.21; // USD
+```
+
+#### **Essential External Services (Fixed Costs)**
+```typescript
+interface StaticExternalCosts {
+  stockDataProviders: {
+    // Basic stock data subscription (minimum viable)
+    basicStockAPI: 25.00; // Basic Alpha Vantage or similar
+    newsAPIs: 0.00; // Free tier or minimal usage
+    totalExternalAPIs: 25.00;
+  };
+  
+  dataTransfer: {
+    // Minimal data transfer
+    inboundData: 0.00; // Always free
+    outboundData: 0.00; // Within free tier (1GB/month)
+    totalDataTransfer: 0.00;
+  };
+}
+
+const staticExternalCosts = 25.00; // USD
+```
+
+### **Static System Maintenance Cost Summary**
+
+```typescript
+interface StaticMonthlyCostSummary {
+  computeServices: 367.45;    // SageMaker endpoint (always-on)
+  storageServices: 29.00;     // Minimal RDS + DynamoDB + Timestream + S3
+  networkingServices: 0.10;   // Minimal EventBridge usage
+  securityServices: 3.58;     // Essential secrets and encryption
+  monitoringServices: 11.21;  // Basic monitoring and health checks
+  externalServices: 25.00;    // Basic stock data API
+  
+  subtotal: 436.34;
+  
+  // AWS Support (Developer Plan - minimum $29/month for production)
+  awsSupport: 29.00;
+  
+  // Buffer for unexpected costs (5%)
+  contingencyBuffer: 23.27;
+  
+  totalStaticMonthlyCost: 488.61; // USD
+}
+
+// Annual static cost projection
+const annualStaticCost = 488.61 * 12; // $5,863.32 USD
+
+// Daily static cost
+const dailyStaticCost = 488.61 / 30; // $16.29 USD per day
+```
+
+### **Static Cost Breakdown Analysis**
+
+```typescript
+interface StaticCostAnalysis {
+  unavoidableFixedCosts: {
+    sageMakerEndpoint: 367.45;  // 75.2% of total - largest fixed cost
+    rdsInstance: 17.52;         // 3.6% - database always-on
+    externalDataAPI: 25.00;     // 5.1% - essential data source
+    awsSupport: 29.00;          // 5.9% - production support
+    monitoring: 11.21;          // 2.3% - system health
+    security: 3.58;             // 0.7% - encryption and secrets
+    other: 34.85;               // 7.2% - storage, networking, buffer
+  };
+  
+  costOptimizationOpportunities: {
+    sageMakerAlternatives: {
+      option1: "Use Lambda with TensorFlow.js - reduce to ~$50/month";
+      option2: "Spot instances for batch inference - reduce by 70%";
+      option3: "Serverless inference endpoints - pay per use";
+    };
+    
+    databaseOptimization: {
+      option1: "Aurora Serverless v2 - scale to zero capability";
+      option2: "DynamoDB only architecture - eliminate RDS";
+    };
+  };
+}
+```
+
+### **Minimum Viable System Cost**
+
+```typescript
+interface MinimumViableCost {
+  // Ultra-minimal configuration for proof of concept
+  lambdaOnly: 0.00;           // Within free tier
+  dynamoDBOnly: 0.63;         // Minimal storage
+  s3Essential: 1.65;          // Model storage
+  apiGateway: 0.00;           // Within free tier
+  cloudWatch: 3.00;           // Basic monitoring
+  secretsManager: 2.05;       // Essential secrets
+  externalAPI: 25.00;         // Basic stock data
+  
+  absoluteMinimum: 32.33;     // USD per month
+  
+  note: "This configuration sacrifices ML capabilities and uses Lambda-only inference";
+}
+```
+
+### **Static Cost Optimization Strategies**
+
+#### **Immediate Fixed Cost Reductions**
+1. **SageMaker Alternatives**: Replace always-on endpoint with serverless inference
+   - **Serverless Inference**: Pay per request instead of hourly ($367 → ~$50/month)
+   - **Lambda + TensorFlow.js**: Client-side or Lambda-based inference
+   - **Batch Transform**: Schedule predictions instead of real-time
+
+2. **Database Optimization**: 
+   - **Aurora Serverless v2**: Scale to zero when not in use ($17.52 → $5-10/month)
+   - **DynamoDB-only**: Eliminate RDS entirely for simpler data model
+
+3. **Reserved Capacity**: 
+   - **1-year SageMaker Reserved**: 30% discount ($367 → $257/month)
+   - **3-year Reserved**: 50% discount ($367 → $184/month)
+
+#### **Static Cost Monitoring**
+
+```typescript
+interface StaticCostMonitoring {
+  budgetAlerts: {
+    monthly_400: "Alert at $400 static cost threshold";
+    monthly_500: "Critical alert at $500 static cost";
+    daily_20: "Daily budget alert at $20";
+  };
+  
+  fixedCostReview: {
+    frequency: "Quarterly";
+    focus: [
+      "Always-on resource utilization",
+      "Reserved instance opportunities", 
+      "Architecture simplification",
+      "Service consolidation"
+    ];
+  };
+  
+  costBreakdown: {
+    sageMakerEndpoint: "75.2% of static costs";
+    priority: "Highest optimization target";
+    alternatives: "Serverless inference, Lambda-based ML";
+  };
+}
+```
+
+### **Business Viability with Static Costs**
+
+```typescript
+interface StaticCostBusinessMetrics {
+  staticMonthlyCost: 488.61;
+  assumedRevenuePerUser: 10.00; // Monthly subscription
+  
+  breakEvenUsers: 49; // $488.61 / $10.00 (rounded up)
+  
+  profitabilityWithStaticCosts: {
+    users_50: {
+      revenue: 500.00;
+      staticCosts: 488.61;
+      variableCosts: 0.00; // Minimal at this scale
+      profit: 11.39;
+      margin: "2.3%";
+    };
+    users_100: {
+      revenue: 1000.00;
+      staticCosts: 488.61;
+      variableCosts: 25.00; // Some variable costs start
+      profit: 486.39;
+      margin: "48.6%";
+    };
+    users_500: {
+      revenue: 5000.00;
+      staticCosts: 488.61;
+      variableCosts: 200.00; // Increased API usage, data transfer
+      profit: 4311.39;
+      margin: "86.2%";
+    };
+  };
+  
+  optimizedStaticCosts: {
+    withServerlessML: {
+      staticMonthlyCost: 171.16; // Removing SageMaker endpoint
+      breakEvenUsers: 18;
+      note: "Using Lambda-based inference instead of always-on endpoint";
+    };
+    
+    withAuroraServerless: {
+      staticMonthlyCost: 478.09; // Slight reduction in database costs
+      breakEvenUsers: 48;
+      note: "Database scales to zero during low usage";
+    };
+  };
+}
+```
+
+### **Static Cost Risk Assessment**
+
+```typescript
+interface StaticCostRisks {
+  highFixedCosts: {
+    risk: "High barrier to entry for small user base";
+    mitigation: "Implement serverless alternatives for ML inference";
+    impact: "Reduces break-even point from 49 to 18 users";
+  };
+  
+  sageMakerDependency: {
+    risk: "75% of costs tied to single service";
+    mitigation: "Develop Lambda-based inference fallback";
+    timeline: "Implement within first 3 months";
+  };
+  
+  scalingInefficiency: {
+    risk: "Fixed costs don't scale with usage";
+    mitigation: "Transition to variable pricing models as user base grows";
+    threshold: "Above 1000 users, optimize for variable costs";
+  };
+}
+```
+
+### **Recommended Static Cost Strategy**
+
+```typescript
+interface RecommendedStrategy {
+  phase1_MVP: {
+    approach: "Minimize static costs with serverless architecture";
+    targetCost: 171.16; // USD per month
+    architecture: "Lambda + DynamoDB + S3 + Basic APIs";
+    tradeoffs: "Reduced ML sophistication, acceptable cold starts";
+  };
+  
+  phase2_Growth: {
+    approach: "Hybrid model with some always-on services";
+    targetCost: 350.00; // USD per month
+    architecture: "Add Aurora Serverless, basic SageMaker";
+    trigger: "Above 100 active users";
+  };
+  
+  phase3_Scale: {
+    approach: "Optimize for performance with reserved capacity";
+    targetCost: 400.00; // USD per month with reserved instances
+    architecture: "Full production setup with reserved instances";
+    trigger: "Above 500 active users";
+  };
+}
+```
+
+This static cost analysis shows that the system requires a minimum of **$488.61/month** to maintain basic operations, with the SageMaker endpoint being the largest fixed cost component. The break-even point is **49 users** at $10/month subscription, making it viable for small-scale operations.
