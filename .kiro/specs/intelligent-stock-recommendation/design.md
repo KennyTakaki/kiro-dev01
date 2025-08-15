@@ -351,109 +351,336 @@ export interface LambdaResponse<T = unknown> {
 
 ### Database Schema (Multi-Database Approach)
 
-#### Amazon RDS (PostgreSQL) - Relational Data
+#### Amazon RDS (PostgreSQL) - Structured Data and Complex Queries
+
+**Stored Data**: User information, recommendation history, prediction results, company information, complex analysis results
+
 ```sql
--- Users table
+-- User profiles and account information
 CREATE TABLE users (
     id UUID PRIMARY KEY,
     email VARCHAR(255) UNIQUE NOT NULL,
-    risk_tolerance VARCHAR(50),
-    investment_period INTEGER,
-    investment_amount DECIMAL(15,2),
-    experience_level VARCHAR(50),
-    preferences JSONB,
+    risk_tolerance VARCHAR(50), -- LOW, MEDIUM, HIGH
+    investment_period INTEGER, -- Investment period in months
+    investment_amount DECIMAL(15,2), -- Planned investment amount
+    experience_level VARCHAR(50), -- BEGINNER, INTERMEDIATE, ADVANCED
+    preferences JSONB, -- Investment style, sector preferences, etc.
     created_at TIMESTAMP DEFAULT NOW(),
     updated_at TIMESTAMP DEFAULT NOW()
 );
 
--- Stock recommendations table
+-- Stock recommendation history and detailed information
 CREATE TABLE stock_recommendations (
     id UUID PRIMARY KEY,
     user_id UUID REFERENCES users(id),
     symbol VARCHAR(10) NOT NULL,
     company_name VARCHAR(255),
-    entry_price DECIMAL(10,2),
-    target_price DECIMAL(10,2),
-    confidence_score DECIMAL(3,2),
+    entry_price DECIMAL(10,2), -- Recommended purchase price
+    target_price DECIMAL(10,2), -- Target price
+    stop_loss_price DECIMAL(10,2), -- Stop loss price
+    confidence_score DECIMAL(3,2), -- Confidence score (0-1)
     risk_level VARCHAR(50),
-    rationale TEXT,
-    status VARCHAR(50),
-    created_at TIMESTAMP DEFAULT NOW()
+    investment_rationale TEXT, -- Detailed investment rationale
+    similar_cases_ids UUID[], -- Array of similar case IDs
+    status VARCHAR(50), -- ACTIVE, COMPLETED, CANCELLED
+    actual_entry_price DECIMAL(10,2), -- Actual purchase price
+    actual_exit_price DECIMAL(10,2), -- Actual selling price
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
 );
 
--- Price predictions table
+-- Price prediction detailed data
 CREATE TABLE price_predictions (
     id UUID PRIMARY KEY,
     stock_symbol VARCHAR(10) NOT NULL,
     current_price DECIMAL(10,2),
-    predicted_prices JSONB,
-    scenarios JSONB,
-    confidence_interval JSONB,
+    predicted_prices JSONB, -- {30: 150.5, 60: 165.2, 90: 180.0} Price predictions by days
+    scenarios JSONB, -- {best: {...}, worst: {...}, expected: {...}}
+    confidence_interval JSONB, -- [lower_bound, upper_bound]
+    model_version VARCHAR(50), -- Version of ML model used
+    input_features JSONB, -- Features used for prediction
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Company basic information and IR data
+CREATE TABLE companies (
+    id UUID PRIMARY KEY,
+    symbol VARCHAR(10) UNIQUE NOT NULL,
+    company_name VARCHAR(255) NOT NULL,
+    sector VARCHAR(100),
+    industry VARCHAR(100),
+    market_cap BIGINT,
+    employees INTEGER,
+    founded_year INTEGER,
+    headquarters VARCHAR(255),
+    business_description TEXT,
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+);
+
+-- IR information and announcements
+CREATE TABLE ir_announcements (
+    id UUID PRIMARY KEY,
+    company_id UUID REFERENCES companies(id),
+    announcement_type VARCHAR(100), -- EARNINGS, DIVIDEND, MERGER, etc.
+    title VARCHAR(500),
+    content TEXT,
+    announcement_date DATE,
+    impact_score DECIMAL(3,2), -- Stock price impact score
+    sentiment_score DECIMAL(3,2), -- Positive/negative sentiment score
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Historical case detailed data
+CREATE TABLE historical_cases (
+    id UUID PRIMARY KEY,
+    symbol VARCHAR(10),
+    company_name VARCHAR(255),
+    case_period_start DATE,
+    case_period_end DATE,
+    pattern_type VARCHAR(100), -- GROWTH_AFTER_EARNINGS, RECOVERY_PLAY, etc.
+    price_appreciation DECIMAL(5,2), -- Price appreciation percentage
+    time_period INTEGER, -- Period in days
+    ir_factors JSONB, -- IR factors that influenced the case
+    fundamental_factors JSONB, -- Fundamental factors
+    technical_factors JSONB, -- Technical factors
+    market_conditions JSONB, -- Market conditions at the time
+    similarity_algorithm_version VARCHAR(50),
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Complex analysis results cache
+CREATE TABLE analysis_results (
+    id UUID PRIMARY KEY,
+    stock_symbol VARCHAR(10) NOT NULL,
+    analysis_type VARCHAR(100), -- CORRELATION, PATTERN_MATCH, RISK_ASSESSMENT
+    result_data JSONB,
+    confidence_level DECIMAL(3,2),
+    expires_at TIMESTAMP,
     created_at TIMESTAMP DEFAULT NOW()
 );
 ```
 
-#### Amazon DynamoDB - Fast Lookups and Sessions
+#### Amazon DynamoDB - Fast Lookups and Session Management
+
+**Stored Data**: User sessions, analysis cache, real-time recommendations, pattern matching indexes
+
 ```typescript
-// User sessions and preferences (DynamoDB)
+// User sessions and temporary settings
 interface UserSessionItem {
   PK: string; // USER#${userId}
   SK: string; // SESSION#${sessionId}
   userId: string;
-  sessionData: Record<string, unknown>;
-  expiresAt: number; // TTL
+  sessionData: {
+    currentWatchlist: string[]; // Currently monitored stocks
+    recentSearches: string[]; // Recent search history
+    activeRecommendations: string[]; // Active recommendation IDs
+    preferences: Record<string, unknown>; // Temporary settings
+  };
+  lastActivity: string; // ISO timestamp
+  expiresAt: number; // TTL (24 hours later)
 }
 
-// Historical cases for fast pattern matching
-interface HistoricalCaseItem {
+// Similar case index for fast pattern matching
+interface PatternMatchingItem {
   PK: string; // PATTERN#${patternType}
-  SK: string; // CASE#${caseId}
+  SK: string; // CASE#${caseId}#${symbol}
   symbol: string;
   companyName: string;
-  patternType: string;
-  priceAppreciation: number;
-  timePeriod: number;
-  irFactors: string[];
-  similarityScore: number;
+  patternType: string; // 'EARNINGS_GROWTH', 'RECOVERY_PLAY', 'BREAKOUT'
+  priceAppreciation: number; // Price appreciation rate
+  timePeriod: number; // Period in days
+  irFactors: string[]; // ['DIVIDEND_INCREASE', 'NEW_PRODUCT_LAUNCH']
+  similarityScore: number; // Similarity score 0-1
+  
+  // GSI for symbol-based queries
   GSI1PK: string; // SYMBOL#${symbol}
-  GSI1SK: string; // APPRECIATION#${priceAppreciation}
+  GSI1SK: string; // APPRECIATION#${priceAppreciation.toFixed(2)}
+  
+  // GSI for time-based queries
+  GSI2PK: string; // TIMEPERIOD#${timePeriod}
+  GSI2SK: string; // PATTERN#${patternType}#${priceAppreciation}
 }
 
-// Analysis cache for performance
+// Analysis results cache for fast access
 interface AnalysisCacheItem {
   PK: string; // ANALYSIS#${stockSymbol}
-  SK: string; // CACHE#${analysisType}
-  result: Record<string, unknown>;
+  SK: string; // CACHE#${analysisType}#${timestamp}
+  analysisType: string; // 'IR_ANALYSIS', 'RISK_ASSESSMENT', 'CORRELATION'
+  result: {
+    confidence: number;
+    factors: string[];
+    score: number;
+    details: Record<string, unknown>;
+  };
+  computationTime: number; // Computation time in ms
+  expiresAt: number; // TTL (1 hour later)
+}
+
+// Real-time recommendation temporary storage
+interface RealtimeRecommendationItem {
+  PK: string; // REALTIME#${userId}
+  SK: string; // REC#${timestamp}#${symbol}
+  userId: string;
+  symbol: string;
+  recommendationType: string; // 'BUY', 'SELL', 'HOLD'
+  urgency: string; // 'HIGH', 'MEDIUM', 'LOW'
+  reason: string; // Summary of recommendation reason
+  confidence: number;
+  validUntil: string; // ISO timestamp
+  expiresAt: number; // TTL (30 minutes later)
+}
+
+// User investment history summary for fast access
+interface UserInvestmentSummaryItem {
+  PK: string; // USERSUMMARY#${userId}
+  SK: string; // SUMMARY#CURRENT
+  totalInvestment: number;
+  currentValue: number;
+  realizedGains: number;
+  unrealizedGains: number;
+  successfulRecommendations: number;
+  totalRecommendations: number;
+  riskProfile: string;
+  lastUpdated: string; // ISO timestamp
+  expiresAt: number; // TTL (1 day later)
+}
+
+// Market alerts and triggers
+interface MarketAlertItem {
+  PK: string; // ALERT#${alertType}
+  SK: string; // TRIGGER#${symbol}#${condition}
+  symbol: string;
+  alertType: string; // 'PRICE_TARGET', 'VOLUME_SPIKE', 'NEWS_SENTIMENT'
+  condition: {
+    operator: string; // 'GREATER_THAN', 'LESS_THAN', 'EQUALS'
+    value: number;
+    currentValue: number;
+  };
+  userId: string;
+  isActive: boolean;
+  triggeredAt?: string; // ISO timestamp
   expiresAt: number; // TTL
+}
+
+// External API response cache
+interface APIResponseCacheItem {
+  PK: string; // APICACHE#${apiProvider}
+  SK: string; // ENDPOINT#${endpoint}#${params_hash}
+  apiProvider: string; // 'ALPHA_VANTAGE', 'YAHOO_FINANCE'
+  endpoint: string;
+  response: Record<string, unknown>;
+  cachedAt: string; // ISO timestamp
+  expiresAt: number; // TTL (5-60 minutes, varies by API)
 }
 ```
 
-#### Amazon Timestream - Time Series Data
+**DynamoDB Benefits**:
+- **Millisecond Response**: Single-digit millisecond response times
+- **Auto Scaling**: Automatic adjustment based on traffic
+- **TTL Feature**: Automatic deletion of old data
+- **Global Secondary Indexes**: Support for multiple search patterns
+
+#### Amazon Timestream - Time Series Data and High-Frequency Updates
+
+**Stored Data**: Stock price data, prediction accuracy tracking, system metrics, real-time market data
+
 ```typescript
-// Performance tracking time series
-interface PerformanceDataPoint {
+// Stock price time series data (minute to daily intervals)
+interface StockPriceDataPoint {
+  time: Date; // Timestamp
+  measure_name: 'open' | 'high' | 'low' | 'close' | 'volume' | 'adjusted_close';
+  measure_value: number;
+  dimensions: {
+    symbol: string; // Stock symbol
+    exchange: string; // Stock exchange
+    data_source: string; // Data provider
+  };
+}
+
+// Continuous prediction accuracy tracking
+interface PredictionAccuracyDataPoint {
   time: Date;
-  measure_name: 'prediction_accuracy' | 'actual_price' | 'predicted_price';
+  measure_name: 'prediction_accuracy' | 'actual_price' | 'predicted_price' | 'error_rate';
   measure_value: number;
   dimensions: {
     stock_symbol: string;
     prediction_id: string;
+    prediction_horizon: string; // '30d', '60d', '90d'
+    model_version: string;
     user_id?: string;
   };
 }
 
-// Market data time series
-interface MarketDataPoint {
+// Market-wide indicators and sentiment
+interface MarketIndicatorDataPoint {
   time: Date;
-  measure_name: 'stock_price' | 'volume' | 'market_cap';
+  measure_name: 'market_index' | 'sector_performance' | 'volatility_index' | 'sentiment_score';
   measure_value: number;
   dimensions: {
-    symbol: string;
-    exchange: string;
-    sector?: string;
+    indicator_type: string; // 'S&P500', 'NASDAQ', 'VIX', etc.
+    sector?: string; // 'TECHNOLOGY', 'HEALTHCARE', etc.
+    region: string; // 'US', 'JP', 'EU'
+  };
+}
+
+// System performance metrics
+interface SystemMetricsDataPoint {
+  time: Date;
+  measure_name: 'lambda_duration' | 'lambda_memory_used' | 'api_response_time' | 'error_count';
+  measure_value: number;
+  dimensions: {
+    function_name: string;
+    service_name: string;
+    environment: string; // 'prod', 'staging', 'dev'
+    region: string;
+  };
+}
+
+// User investment performance tracking
+interface UserPerformanceDataPoint {
+  time: Date;
+  measure_name: 'portfolio_value' | 'realized_gain_loss' | 'unrealized_gain_loss' | 'recommendation_success_rate';
+  measure_value: number;
+  dimensions: {
+    user_id: string;
+    recommendation_id?: string;
+    stock_symbol?: string;
+    investment_strategy: string; // 'CONSERVATIVE', 'AGGRESSIVE', etc.
+  };
+}
+
+// External API usage and rate limit tracking
+interface APIUsageDataPoint {
+  time: Date;
+  measure_name: 'api_calls' | 'rate_limit_remaining' | 'response_time' | 'error_count';
+  measure_value: number;
+  dimensions: {
+    api_provider: string; // 'ALPHA_VANTAGE', 'YAHOO_FINANCE', etc.
+    endpoint: string;
+    status_code: string;
+  };
+}
+
+// Machine learning model performance tracking
+interface MLModelMetricsDataPoint {
+  time: Date;
+  measure_name: 'model_accuracy' | 'precision' | 'recall' | 'f1_score' | 'training_time';
+  measure_value: number;
+  dimensions: {
+    model_name: string;
+    model_version: string;
+    training_dataset_size: string;
+    feature_count: string;
   };
 }
 ```
+
+**Timestream Benefits**:
+- **Fast Queries**: Optimized for time-range aggregation queries
+- **Automatic Compression**: Automatic compression of old data for cost reduction
+- **Scalability**: Efficient processing of large volumes of time series data
+- **Real-time Analysis**: Immediate analysis with latest data
 
 ## Error Handling
 
